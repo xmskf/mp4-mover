@@ -1,0 +1,7 @@
+.git
+.github
+dist
+*.md
+move_mp4
+mp4-mover
+.DS_Store

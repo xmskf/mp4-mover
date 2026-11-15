@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: 编译并发布二进制
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: 计算镜像地址
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "${GITHUB_ENV}"
+
+      - name: 编译多架构静态二进制
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for target in linux/amd64 linux/arm64 linux/arm; do
+            os="${target%/*}"
+            arch="${target#*/}"
+            echo "==> ${os}/${arch}"
+            CGO_ENABLED=0 GOOS="${os}" GOARCH="${arch}" \
+              go build -trimpath -ldflags="-s -w" \
+              -o "dist/move_mp4_${os}_${arch}" .
+          done
+          cd dist
+          sha256sum * > checksums.txt
+          ls -lh
+
+      - name: 上传到 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            ## 使用方式
+
+            下载对应架构的 `move_mp4_*` 静态二进制（无需额外依赖）：
+
+            ```bash
+            chmod +x move_mp4_linux_amd64
+            ./move_mp4_linux_amd64
+            ```
+
+            程序会每 5 分钟扫描一次 `/xunlei`，把 `.mp4` 文件移动到 `/tmp`。
+
+            也可以直接使用多架构镜像：
+
+            ```bash
+            docker run -d --name mp4-mover \
+              -v /你的/迅雷下载目录:/xunlei \
+              -v /你的/目标目录:/tmp \
+              --restart unless-stopped \
+              ${{ env.IMAGE }}:latest
+            ```
+
+            校验文件完整性：
+
+            ```bash
+            sha256sum -c checksums.txt
+            ```
